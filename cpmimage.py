@@ -33,12 +33,12 @@
 #      - additional customization options for the listbox appearance.
 #        * Font and Text Size: Allow users to customize the font family, font size, and font weight of 
 #          the text displayed in the listbox. This can be useful for improving readability and matching 
-#          the overall aesthetic of the application.
+#          the overall aesthetic of the application. COMPLETED
 #        * Text Color and Background Color: Provide options to set the text color and background color 
 #          of the listbox items. This allows users to personalize the appearance of the listbox to their 
-#          preferences or match the theme of the application.
-#        * Selection Color: Allow users to specify the color used to highlight selected items in the 
-#          listbox. This can help improve visibility and distinguish selected items from others.
+#          preferences or match the theme of the application. COMPLETED
+#        * Selection Colors: Allow users to specify the colors used to highlight selected items in the 
+#          listbox. This can help improve visibility and distinguish selected items from others. COMPLETED
 #        * Scrollbar Style: Customize the style of the scrollbar used with the listbox. Users may prefer 
 #          different scrollbar designs such as flat, sunken, raised, or themed scrollbars that match the 
 #          operating system's native appearance.
@@ -60,12 +60,23 @@
 #          different types of data in the listbox.
 
 import tkinter as tk
-from tkinter import filedialog, messagebox, simpledialog
+import tkinter.font as tkFont
+from tkinter import filedialog, messagebox, simpledialog, colorchooser
+from tkinter.simpledialog import askstring
 import subprocess
 import re
 import sys
 import os
 import argparse
+
+initial_text_color = 'black'
+initial_bg_color = 'white'
+initial_font = ('Mono', 12, 'normal')
+initial_border_width = 2
+initial_padding_x = 5
+initial_padding_y = 5
+initial_width=50
+initial_height=30
 
 parser = argparse.ArgumentParser(description='CPMImage application')
 parser.add_argument('-f', '--format', help='Specify the disk format', default='ibm-3740')
@@ -76,7 +87,7 @@ imgformat = args.format
 current_filename = args.filename if args.filename else ''
 debug_mode = False
 
-last_used_directory = os.getcwd()  # Initialize last used directory to the current working directory
+last_used_directory = os.getcwd()                                               # Initialize last used directory to the current working directory
 
 def toggle_debug_mode():
     global debug_mode
@@ -90,17 +101,82 @@ def debug_print(*args):
     if debug_mode:
         print(*args)
 
+def choose_text_color():
+    color_code = colorchooser.askcolor(title="Choose text color")[1]
+    if color_code:
+        listbox.config(fg=color_code)
+
+def update_text_color():
+    global initial_text_color
+    color_code = colorchooser.askcolor(title="Choose text color")[1]
+    if color_code:
+        initial_text_color = color_code
+        listbox.config(fg=initial_text_color)
+
+def choose_bg_color():
+    color_code = colorchooser.askcolor(title="Choose background color")[1]
+    if color_code:
+        listbox.config(bg=color_code)
+
+def update_bg_color():
+    global initial_bg_color
+    color_code = colorchooser.askcolor(title="Choose background color")[1]
+    if color_code:
+        initial_bg_color = color_code
+        listbox.config(bg=initial_bg_color)
+
+def choose_select_bg_color():
+    color_code = colorchooser.askcolor(title="Choose selection background color")[1]
+    if color_code:
+        listbox.config(selectbackground=color_code)
+
+def choose_select_fg_color():
+    color_code = colorchooser.askcolor(title="Choose selection text color")[1]
+    if color_code:
+        listbox.config(selectforeground=color_code)
+
+def update_padding():
+    global initial_padding_x, initial_padding_y
+    new_padx = simpledialog.askinteger("Padding", "Enter horizontal padding (pixels):", minvalue=0)
+    new_pady = simpledialog.askinteger("Padding", "Enter vertical padding (pixels):", minvalue=0)
+    if new_padx is not None and new_pady is not None:
+        initial_padding_x = new_padx
+        initial_padding_y = new_pady
+        listbox.pack_configure(padx=initial_padding_x, pady=initial_padding_y)
+
+def customize_border():
+    new_border_width = simpledialog.askinteger("Border Width", "Enter border width (pixels):", minvalue=0)
+    new_highlight_thickness = simpledialog.askinteger("Highlight Thickness", "Enter highlight thickness (pixels):", minvalue=0)
+    if new_border_width is not None:                                            # Check if the user made a selection
+        listbox.config(borderwidth=new_border_width, highlightthickness=new_highlight_thickness)
+
+def customize_padding():
+    new_padx = simpledialog.askinteger("Padding", "Enter horizontal padding (pixels):", minvalue=0)
+    new_pady = simpledialog.askinteger("Padding", "Enter vertical padding (pixels):", minvalue=0)
+    if new_padx is not None and new_pady is not None:                           # Check if the user made a selection
+        listbox.config(padx=new_padx, pady=new_pady)
+
+def update_listbox_font():                                                      # Prompt the user for font, size, and weight
+    font_spec = simpledialog.askstring("Font", "Enter font (e.g., 'Arial 12 bold'):")
+    
+    if font_spec:                                                               # Check if the user provided a value
+        try:                                                                    # Create a font object with the user's specifications
+            new_font = tkFont.Font(font=font_spec)
+            listbox.config(font=new_font)
+        except tk.TclError:
+            tk.messagebox.showerror("Error", "Invalid font specification.")
+
 def open_image():
-    global current_filename, last_used_directory  # Ensure we're modifying the global variables
+    global current_filename, last_used_directory                                # Ensure we're modifying the global variables
     filetypes = [('CP/M Image', '*.img'), ('CP/M Image', '.IMG'), ('CP/M Image', '.ima'), ('CP/M Image', '.IMA'),
                  ('CP/M Image', '.DSK'), ('CP/M Image', '.dsk'), ('All Files', '*')]
     filename = askopenfilename_case_insensitive(filetypes=filetypes, initialdir=last_used_directory)
 
     if filename:
-        current_filename = filename  # Update the global variable
-        last_used_directory = os.path.dirname(filename)  # Update the last used directory
+        current_filename = filename                                             # Update the global variable
+        last_used_directory = os.path.dirname(filename)                         # Update the last used directory
         populate_listbox(current_filename)
-        update_window_title()  # Update the window title with the new filename
+        update_window_title()                                                   # Update the window title with the new filename
         return current_filename
     return None
 
@@ -132,94 +208,147 @@ def parse_cpmls_output(output):
     parsed_lines = []
     for line in lines:
         if line.startswith("Name") or line.startswith("-") or line.startswith(" ") or line.startswith("  "):
-            parsed_lines.append(line.strip())  # Keep header, footer, and empty lines as is
+            parsed_lines.append(line.strip())                                   # Keep header, footer, and empty lines as is
         else:
-            parsed_lines.append(line[:20])  # Display first 20 characters of the line as-is
+            parsed_lines.append(line[:20])                                      # Display first 20 characters of the line as-is
     return parsed_lines
 
-def parse_footer(footer_line):
-    # Split the footer line by spaces
+def parse_footer(footer_line):                                                  # Split the footer line by spaces
     parts = footer_line.strip().split()
     
-    # Ensure the minimum required parts are available for parsing
-    if len(parts) >= 5:
+    if len(parts) >= 5:                                                         # Ensure the minimum required parts are available for parsing
         total_occupied = parse_size(parts[3])
-        total_free = 0  # Default value for total free space
-        total_space = 0  # Default value for total space
+        total_free = 0                                                          # Default value for total free space
+        total_space = 0                                                         # Default value for total space
 
-        # Check if "Free." is present in the footer line
-        if "Free." in parts:
-            # If "Free." is present, find its index
-            free_index = parts.index("Free.")
-            if free_index >= 1:  # Ensure "Free." is not the first element
-                # Extract the total free space (located before "Free.")
-                total_free = parse_size(parts[free_index - 1])
-                # Extract the total space (located before total free space)
-                if free_index >= 2:
+        if "Free." in parts:                                                    # Check if "Free." is present in the footer line
+            free_index = parts.index("Free.")                                   # If "Free." is present, find its index
+            if free_index >= 1:                                                 # Ensure "Free." is not the first element
+                total_free = parse_size(parts[free_index - 1])                  # Extract the total free space (located before "Free.")
+                if free_index >= 2:                                             # Extract the total space (located before total free space)
                     total_space = parse_size(parts[free_index - 2])
-
-        # Return the formatted string
-        return f"{parts[0]} Files {total_occupied} / {total_space + total_free}K"
+        
+        return f"{parts[0]} Files {total_occupied} / {total_space + total_free}K" # Return the formatted string
     else:
         return "Footer line format error"
 
-def parse_size(size_str):
-    # Removing non-numeric characters and converting to integer
+def parse_size(size_str):                                                       # Removing non-numeric characters and converting to integer
     numeric_part = ''.join(filter(str.isdigit, size_str))
     return int(numeric_part) if numeric_part.isdigit() else 0
 
-def format_size(size):
-    # Formatting size in KiloBytes
+def format_size(size):                                                          # Formatting size in KiloBytes
     return f"{size}K"
+
+def on_listbox_select(event):                                                   # Triggered when an item in the listbox is clicked
+    unselectable_indices = [0, 1, listbox.size() - 2, listbox.size() - 1]       # Indices of items that should not be selectable
+    for index in unselectable_indices:                                          
+        listbox.selection_clear(index)                                          # Clear selection
 
 def populate_listbox(filename):
     listbox.delete(0, tk.END)
+    listbox.insert(tk.END, "UN     Name       Size")                            # Insert header lines and make them unselectable
+    listbox.insert(tk.END, "-- ------------ ------")
 
-    # Manually define the header lines
-    header_line_1 = "    Name       Size"
-    header_line_2 = "------------ ------"
-    listbox.insert(tk.END, header_line_1)
-    listbox.insert(tk.END, header_line_2)
+    usernum = 0                                                                 # Initialize user number
+    total_files = 0                                                             # Initialize total_files
+    total_size = 0                                                              # Initialize total_size
+    free_space = 0                                                              # Initialize free_space
 
-    try:
+    try:                                                                        # Execute cpmls command and split output into lines
         output = subprocess.check_output(['cpmls', '-D', '-f', imgformat, filename], universal_newlines=True)
-        parsed_output = parse_cpmls_output(output)
-
-        for line in parsed_output[2:]:  # Skip the initial cpmls command header
-            # Match lines indicating the start of the footer section
-            if re.match(r'.*Files occupying', line):
-                # Once the footer section starts, insert a visual separator
-                listbox.insert(tk.END, "-------------------")
-                # Process the last line for the summary, assuming it's the very next line
-                footer_text = parse_footer(parsed_output[-1])
-                listbox.insert(tk.END, footer_text)
-                break  # Exit the loop after processing the footer
+        for line in output.splitlines():
+            if line.strip() == "" or "Name    Bytes   Recs  Attr     update             create" in line or "------ ------ ----" in line:
+                continue                                                        # Skip blank and specific header lines
+            elif line.startswith("User"):
+                usernum = int(line.split()[1][:-1])                             # Extract and update usernum
+            elif "Files occupying" in line:
+                parts = line.split()
+                if len(parts) >= 7:                                             # Ensure there are enough parts in the line
+                    total_files = parts[0]
+                    total_size = parts[3].rstrip("K")
+                    free_space = parts[6].rstrip("K")
             else:
-                # For all other lines, insert them into the listbox
-                listbox.insert(tk.END, line[:20])
-
+                formatted_line = f"{usernum:2} {line[:20]}"                     # Format and insert file lines
+                listbox.insert(tk.END, formatted_line)
     except subprocess.CalledProcessError as e:
-        listbox.insert(tk.END, f"Error: {e}")
+        messagebox.showerror("Error", f"Failed to load file list: {e}")
+
+    listbox.insert(tk.END, "-- ------------ ------")                            # Add footer lines
+    total_space = int(total_size) + int(free_space)
+    footer_text = f"{total_files} Files {total_size} / {total_space}K"
+    listbox.insert(tk.END, footer_text)
+
+#def populate_listbox(filename):
+#    listbox.delete(0, tk.END)
+#
+#    # Manually define the header lines
+#    header_line_1 = "    Name       Size"
+#    header_line_2 = "------------ ------"
+#    listbox.insert(tk.END, header_line_1)
+#    listbox.insert(tk.END, header_line_2)
+#
+#    try:
+#        output = subprocess.check_output(['cpmls', '-D', '-f', imgformat, filename], universal_newlines=True)
+#        parsed_output = parse_cpmls_output(output)
+#
+#        for line in parsed_output[2:]:                                          # Skip the initial cpmls command header
+#            if re.match(r'.*Files occupying', line):                            # Match lines indicating the start of the footer section
+#                listbox.insert(tk.END, "-------------------")                   # Once the footer section starts, insert a visual separator
+#                footer_text = parse_footer(parsed_output[-1])                   # Process the last line for the summary, assuming it's the very next line
+#                listbox.insert(tk.END, footer_text)
+#                break                                                           # Exit the loop after processing the footer
+#            else:                                                               # For all other lines, insert them into the listbox
+#                listbox.insert(tk.END, line[:20])
+#
+#    except subprocess.CalledProcessError as e:
+#        listbox.insert(tk.END, f"Error: {e}")
 
 def on_select(event):
     widget = event.widget
     selected_indices = widget.curselection()
 
-    # Define unselectable indices for header lines
-    unselectable_indices = [0, 1]
+    unselectable_indices = [0, 1]                                               # Define unselectable indices for header lines
 
-    # Calculate and add indices for footer lines
-    last_index = widget.size() - 1
+    last_index = widget.size() - 1                                              # Calculate and add indices for footer lines
     unselectable_indices.extend([last_index - 1, last_index])
 
-    # Deselect if any unselectable indices are selected
-    for index in selected_indices:
+    for index in selected_indices:                                              # Deselect if any unselectable indices are selected
         if index in unselectable_indices:
             widget.selection_clear(index)
+
+#def extract_items():
+#    global current_filename
+#    if not current_filename:
+#        return
+#
+#    selected_items = listbox.curselection()
+#    if not selected_items:
+#        messagebox.showinfo("No Items Selected", "Please select one or more items to extract.")
+#        return
+#
+#    try:
+#        for idx in selected_items:
+#            item = listbox.get(idx)
+#            # Attempt to match the expected item format
+#            user_match = re.match(r'^(\d+):(.*)$', item)
+#            if user_match:
+#                usernum, itemname = user_match.group(1), user_match.group(2).strip()
+#                # Extract based on the matched pattern
+#                subprocess.run(['cpmcp', '-f', imgformat, current_filename, f'{usernum}:{itemname}', itemname])
+#            else:
+#                # Parse the filename directly from the item, assuming the first 12 characters, and strip spaces
+#                filename = item[:12].strip()
+#                # Extract using the parsed filename
+#                subprocess.run(['cpmcp', '-f', imgformat, current_filename, filename, filename])
+#    except subprocess.CalledProcessError as e:
+#        messagebox.showerror("Error", f"Error extracting item '{item}': {e}")
+#
+#    listbox.selection_clear(0, tk.END)
 
 def extract_items():
     global current_filename
     if not current_filename:
+        messagebox.showinfo("No Image Open", "Please open an image file before attempting to extract files.")
         return
 
     selected_items = listbox.curselection()
@@ -227,19 +356,39 @@ def extract_items():
         messagebox.showinfo("No Items Selected", "Please select one or more items to extract.")
         return
 
-    try:
-        for idx in selected_items:
-            item = listbox.get(idx)
-            user_match = re.match(r'^(\d+):(.*)$', item)
-            if user_match:
-                usernum, itemname = user_match.group(1), user_match.group(2)
-                subprocess.run(['cpmcp', '-f', imgformat, current_filename, f'{item}', itemname])
-            else:
-                subprocess.run(['cpmcp', '-f', imgformat, current_filename, item, item])
-    except subprocess.CalledProcessError as e:
-        print(f"Error extracting item '{item}': {e}")
+    destination_directory = "./extracted_files/"
+    if not os.path.exists(destination_directory):
+        os.makedirs(destination_directory)
+
+    for idx in selected_items:
+        item = listbox.get(idx)
+        usernum = item[:2].strip()
+        original_filename = item[3:15].replace(" ", "")
+        filename = original_filename  # Start with the original filename
+
+        dest = os.path.join(destination_directory, filename)
+        while os.path.exists(dest):
+            # Prompt for a new filename due to duplicate
+            new_filename = askstring("File Exists", f"The file {filename} already exists. Enter a new filename:")
+            if new_filename is None or new_filename.strip() == "":
+                messagebox.showinfo("Extraction Cancelled", "Extraction cancelled for the current item.")
+                break  # Exit the loop and skip to the next selected item
+
+            # Update filename and dest with the new name provided by the user
+            filename = new_filename.strip()  # Ensure we strip any leading/trailing spaces
+            dest = os.path.join(destination_directory, filename)
+
+        if not os.path.exists(dest):
+            # Proceed with extraction only if the destination does not exist (i.e., user provided a new name)
+            try:
+                src = f"{usernum}:{original_filename}"  # src still uses the original filename from the listbox
+                subprocess.run(['cpmcp', '-f', imgformat, current_filename, src, dest], check=True)
+            except subprocess.CalledProcessError as e:
+                messagebox.showerror("Extraction Error", f"Failed to extract '{original_filename}': {e}")
+                continue
 
     listbox.selection_clear(0, tk.END)
+    messagebox.showinfo("Extraction Complete", "Selected files have been extracted to " + destination_directory)
 
 def delete_items():
     global current_filename
@@ -258,7 +407,7 @@ def delete_items():
         for idx in selected_items:
             item = listbox.get(idx)
             subprocess.run(['cpmrm', '-f', imgformat, current_filename, item], capture_output=True, text=True)
-            refresh_listbox()  # Refresh listbox after deletion
+            refresh_listbox()                                                   # Refresh listbox after deletion
     except subprocess.CalledProcessError as e:
         messagebox.showerror("Error", f"Failed to delete items: {e}")
 
@@ -274,7 +423,7 @@ def import_files():
         return
 
     target_user = tk.simpledialog.askinteger("Target User Number", "Enter the target user number (0-15):", initialvalue=0, minvalue=0, maxvalue=15)
-    if target_user is None:  # Cancel button clicked
+    if target_user is None:                                                     # Cancel button clicked
         return
 
     try:
@@ -282,10 +431,10 @@ def import_files():
             result = subprocess.run(['cpmcp', '-f', imgformat, current_filename, f'{filename}', f'{target_user}:{os.path.basename(filename)}'], capture_output=True, text=True)
             if "device full" in result.stdout.lower():
                 messagebox.showinfo("Image Full", "The disk image is full. Import aborted.")
-                break  # Abort import if image is full
+                break                                                           # Abort import if image is full
         else:
             messagebox.showinfo("Import Successful", "Files imported successfully.")
-            refresh_listbox()  # Refresh listbox after successful import
+            refresh_listbox()                                                   # Refresh listbox after successful import
     except subprocess.CalledProcessError as e:
         messagebox.showerror("Error", f"Failed to import files: {e}")
 
@@ -322,8 +471,7 @@ def refresh_listbox():
         populate_listbox(current_filename)
 
 def populate_format_menu():
-    try:
-        # Look for the diskdefs file in multiple locations
+    try:                                                                        # Look for the diskdefs file in multiple locations
         locations = ['/usr/local/share/diskdefs', '/usr/share/cpmtools/diskdefs', '/etc/cpmtools/diskdefs']
         diskdefs_file = None
         for location in locations:
@@ -339,8 +487,7 @@ def populate_format_menu():
                     if line.startswith('diskdef'):
                         diskdef = line.split()[1]
                         diskdef_lines.append(diskdef)
-        else:
-            # If diskdefs file not found, use this predefined list (from the default diskdefs)
+        else:                                                                   # If diskdefs file not found, use this predefined list (from the default diskdefs)
             diskdef_lines = [
                 '1715',            '17153',                 '4mb-hd',              '8megAltairSIMH',        'all1',
                 'alpha',           'altdsdd',               'amp1',                'amp2',                  'amp3',
@@ -369,14 +516,8 @@ def populate_format_menu():
                 'v1050',           'z80pack-hd',            'z80pack-hdb',         'z9001',                 'zen7',
                 'zen8',            'zen9',                  'zena'
                 ]
-#            diskdef_lines = [
-#                '4mb-hd', 'cpcsys', 'cpcdata', 'cpm86-144feat', 'cpm86-720', 'ibm-3740',
-#                'ibm-8ss', 'ibm-8ds', 'icl-comet-525ss', 'kpii', 'kpiv', 'myz80', 'pcw',
-#                'osborne1', 'osborne4', 'osb1sssd', 'z80pack-hd', 'z80pack-hdb'
-#            ]
 
-        # Dictionary to store submenus
-        submenu_dict = {
+        submenu_dict = {                                                        # Dictionary to store submenus
             "1234567890": tk.Menu(format_menu, tearoff=0),
             "a": tk.Menu(format_menu, tearoff=0),
             "bcd": tk.Menu(format_menu, tearoff=0),
@@ -394,14 +535,12 @@ def populate_format_menu():
         for diskdef in diskdef_lines:
             first_letter = diskdef[0].lower()
 
-            # Find the appropriate submenu for the diskdef
-            for submenu_label, submenu in submenu_dict.items():
+            for submenu_label, submenu in submenu_dict.items():                 # Find the appropriate submenu for the diskdef
                 if first_letter in submenu_label:
                     submenu.add_radiobutton(label=diskdef, command=lambda df=diskdef: format_changed(df), variable=imgformat)
                     break
-
-        # Add submenus to the Format menu
-        for submenu_label, submenu in submenu_dict.items():
+        
+        for submenu_label, submenu in submenu_dict.items():                     # Add submenus to the Format menu
             format_menu.add_cascade(label=submenu_label, menu=submenu)
 
     except Exception as e:
@@ -419,15 +558,27 @@ def create_new_image():
         try:
             subprocess.run(['mkfs.cpm', '-f', imgformat, filename])
             messagebox.showinfo("New Image Created", f"New image '{filename}' created successfully.")
-            open_image(filename)  # Open the newly created image
+            open_image(filename)                                                # Open the newly created image
         except Exception as e:
             messagebox.showerror("Error", f"Failed to create new image: {e}")
+
+# Define the Main Window
 
 root = tk.Tk()
 root.title("CPMImage")
 root.resizable(True, True)
+root.bind_all("<Control-q>", lambda event: on_close())
+root.bind_all("<Control-o>", lambda event: open_image())
+root.bind_all("<Control-w>", lambda event: close_image())
+root.bind_all("<Control-e>", lambda event: extract_items())
+root.bind_all("<F5>",        lambda event: populate_listbox(current_filename))
+root.bind_all("<Control-a>", select_all)
+root.protocol("WM_DELETE_WINDOW", on_close)
 
 menubar = tk.Menu(root)
+root.config(menu=menubar)
+
+# Define the main menu line
 
 file_menu = tk.Menu(menubar, tearoff=0)
 file_menu.add_command(label="New Image...", command=create_new_image, accelerator="Ctrl+N", underline=0)
@@ -451,25 +602,24 @@ format_menu = tk.Menu(menubar, tearoff=0)
 populate_format_menu()
 menubar.add_cascade(label="Format", menu=format_menu, underline=1)
 
-debug_menu = tk.Menu(menubar, tearoff=0)
-debug_menu.add_checkbutton(label="Debug Mode", command=toggle_debug_mode)
-menubar.add_cascade(label="Debug", menu=debug_menu)
+settings_menu = tk.Menu(menubar, tearoff=0)
+settings_menu.add_command(label="Text Color...", command=choose_text_color)
+settings_menu.add_command(label="Background Color...", command=choose_bg_color)
+settings_menu.add_command(label="Font...", command=update_listbox_font)
+settings_menu.add_command(label="Selection Background Color...", command=choose_select_bg_color)
+settings_menu.add_command(label="Selection Text Color...", command=choose_select_fg_color)
+settings_menu.add_command(label="Customize Border...", command=customize_border)
+settings_menu.add_command(label="Customize Padding...", command=customize_padding)
+settings_menu.add_separator()
+settings_menu.add_checkbutton(label="Debug Mode", command=toggle_debug_mode)    # Keep the toggle for debug mode if needed
+menubar.add_cascade(label="Settings", menu=settings_menu)
 
-root.bind_all("<Control-q>", lambda event: on_close())
-root.bind_all("<Control-o>", lambda event: open_image())
-root.bind_all("<Control-w>", lambda event: close_image())
-root.bind_all("<Control-e>", lambda event: extract_items())
-root.bind_all("<F5>",        lambda event: populate_listbox(current_filename))
-root.bind_all("<Control-a>", select_all)
+# Listbox is the main file listing window
 
-root.protocol("WM_DELETE_WINDOW", on_close)
-
-root.config(menu=menubar)
-
-#listbox = tk.Listbox(root, selectmode=tk.MULTIPLE, width=50, height=30)
-listbox = tk.Listbox(root, selectmode=tk.MULTIPLE, width=50, height=30, font=("Courier", 12))
-listbox.pack(fill=tk.BOTH, expand=True)
+listbox = tk.Listbox(root, selectmode=tk.MULTIPLE, fg=initial_text_color, bg=initial_bg_color, font=initial_font, borderwidth=initial_border_width, width=initial_width, height=initial_height)
+listbox.pack(fill=tk.BOTH, expand=True, padx=initial_padding_x, pady=initial_padding_y)
 listbox.bind('<<ListboxSelect>>', on_select)
+listbox.bind('<<ListboxSelect>>', on_listbox_select)
 
 open_file_or_dialog()
 
