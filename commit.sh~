@@ -6,8 +6,6 @@ if [ $# -lt 2 ]; then
     echo "Where branch is the branch you're commiting to; usually main or master"
     echo "commit message is just a message indicating the purpose of the commit"
     echo "If prompted, enter username NCJECulver and password of personal access token"
-    echo "pw NCJECulver"
-    echo "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"
     exit 1
 fi
 
@@ -32,7 +30,7 @@ git push origin "$branch"
 
 exit
 
-user: NCJECulver PAT:
+If prompted for user/password, use NCJECulver and the generated personal access token.
 PATs expire. If you find thats the case, generate a new one as follows:
 
     Log in to GitHub: Go to GitHub.com and log in with your account. You can use your account password from the webpage.

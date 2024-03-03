@@ -61,7 +61,7 @@
 
 import tkinter as tk
 import tkinter.font as tkFont
-from tkinter import filedialog, messagebox, simpledialog, colorchooser
+from tkinter import filedialog, messagebox, simpledialog, colorchooser, ttk
 from tkinter.simpledialog import askstring
 import subprocess
 import re
@@ -85,7 +85,7 @@ args = parser.parse_args()
 
 imgformat = args.format
 current_filename = args.filename if args.filename else ''
-debug_mode = False
+debug_mode = True
 
 last_used_directory = os.getcwd()                                               # Initialize last used directory to the current working directory
 
@@ -237,17 +237,24 @@ def parse_size(size_str):                                                       
     return int(numeric_part) if numeric_part.isdigit() else 0
 
 def format_size(size):                                                          # Formatting size in KiloBytes
-    return f"{size}K"
+    return f"{size}"
 
 def on_listbox_select(event):                                                   # Triggered when an item in the listbox is clicked
     unselectable_indices = [0, 1, listbox.size() - 2, listbox.size() - 1]       # Indices of items that should not be selectable
     for index in unselectable_indices:                                          
         listbox.selection_clear(index)                                          # Clear selection
 
-def populate_listbox(filename):
-    listbox.delete(0, tk.END)
-    listbox.insert(tk.END, "UN     Name       Size")                            # Insert header lines and make them unselectable
-    listbox.insert(tk.END, "-- ------------ ------")
+def treeview_sort_column(tv, col, reverse):
+    l = [(tv.set(k, col), k) for k in tv.get_children('')]
+    l.sort(reverse=reverse)
+
+    for index, (val, k) in enumerate(l):                                        # Rearrange items in sorted positions
+        tv.move(k, '', index)
+
+    tv.heading(col, command=lambda: treeview_sort_column(tv, col, not reverse)) # Reverse sort next time
+
+def populate_listbox(filename):                                                 # New function to use treeview
+    tree.delete(*tree.get_children())                                           # clear any existing data
 
     usernum = 0                                                                 # Initialize user number
     total_files = 0                                                             # Initialize total_files
@@ -255,53 +262,29 @@ def populate_listbox(filename):
     free_space = 0                                                              # Initialize free_space
 
     try:                                                                        # Execute cpmls command and split output into lines
-        output = subprocess.check_output(['cpmls', '-D', '-f', imgformat, filename], universal_newlines=True)
+        cmd=['cpmls', '-D', '-f', imgformat, filename]
+        debug_print("Executing command:", ' '.join(cmd))
+        output = subprocess.check_output(cmd, universal_newlines=True)
         for line in output.splitlines():
-            if line.strip() == "" or "Name    Bytes   Recs  Attr     update             create" in line or "------ ------ ----" in line:
+            if line.strip() == "" or "Name    Bytes" in line or "------" in line or "No files found" in line:
                 continue                                                        # Skip blank and specific header lines
             elif line.startswith("User"):
                 usernum = int(line.split()[1][:-1])                             # Extract and update usernum
             elif "Files occupying" in line:
                 parts = line.split()
-                if len(parts) >= 7:                                             # Ensure there are enough parts in the line
+                if len(parts) >= 6:                                             # Ensure there are enough parts in the line
                     total_files = parts[0]
                     total_size = parts[3].rstrip("K")
-                    free_space = parts[6].rstrip("K")
-            else:
-                formatted_line = f"{usernum:2} {line[:20]}"                     # Format and insert file lines
-                listbox.insert(tk.END, formatted_line)
+                    free_space = parts[4].rstrip("K")
+                    debug_print(total_files, " Files occupying ", total_size, "K, ", free_space, "K Free.")
+            else:                                                               # Extract filename and size from the line (adjust slicing/indexing as needed based on your output format)
+                filename = line[:12].replace(' ', '')                           # Example: Adjust based on actual data layout in 'line' 
+                size = line[13:20].rstrip('K').strip()                          # Example: Adjust based on actual data layout in 'line'
+                tree.insert('', 'end', values=(usernum, filename, size))        # Insert a new row into the Treeview
+        footer_label.config(text=f"Files: {total_files}, Total Size: {total_size}K, Free Space: {free_space}K") # Update the footer label
+        
     except subprocess.CalledProcessError as e:
         messagebox.showerror("Error", f"Failed to load file list: {e}")
-
-    listbox.insert(tk.END, "-- ------------ ------")                            # Add footer lines
-    total_space = int(total_size) + int(free_space)
-    footer_text = f"{total_files} Files {total_size} / {total_space}K"
-    listbox.insert(tk.END, footer_text)
-
-#def populate_listbox(filename):
-#    listbox.delete(0, tk.END)
-#
-#    # Manually define the header lines
-#    header_line_1 = "    Name       Size"
-#    header_line_2 = "------------ ------"
-#    listbox.insert(tk.END, header_line_1)
-#    listbox.insert(tk.END, header_line_2)
-#
-#    try:
-#        output = subprocess.check_output(['cpmls', '-D', '-f', imgformat, filename], universal_newlines=True)
-#        parsed_output = parse_cpmls_output(output)
-#
-#        for line in parsed_output[2:]:                                          # Skip the initial cpmls command header
-#            if re.match(r'.*Files occupying', line):                            # Match lines indicating the start of the footer section
-#                listbox.insert(tk.END, "-------------------")                   # Once the footer section starts, insert a visual separator
-#                footer_text = parse_footer(parsed_output[-1])                   # Process the last line for the summary, assuming it's the very next line
-#                listbox.insert(tk.END, footer_text)
-#                break                                                           # Exit the loop after processing the footer
-#            else:                                                               # For all other lines, insert them into the listbox
-#                listbox.insert(tk.END, line[:20])
-#
-#    except subprocess.CalledProcessError as e:
-#        listbox.insert(tk.END, f"Error: {e}")
 
 def on_select(event):
     widget = event.widget
@@ -319,31 +302,46 @@ def on_select(event):
 #def extract_items():
 #    global current_filename
 #    if not current_filename:
+#        messagebox.showinfo("No Image Open", "Please open an image file before attempting to extract files.")
 #        return
-#
+
 #    selected_items = listbox.curselection()
 #    if not selected_items:
 #        messagebox.showinfo("No Items Selected", "Please select one or more items to extract.")
 #        return
-#
-#    try:
-#        for idx in selected_items:
-#            item = listbox.get(idx)
-#            # Attempt to match the expected item format
-#            user_match = re.match(r'^(\d+):(.*)$', item)
-#            if user_match:
-#                usernum, itemname = user_match.group(1), user_match.group(2).strip()
-#                # Extract based on the matched pattern
-#                subprocess.run(['cpmcp', '-f', imgformat, current_filename, f'{usernum}:{itemname}', itemname])
-#            else:
-#                # Parse the filename directly from the item, assuming the first 12 characters, and strip spaces
-#                filename = item[:12].strip()
-#                # Extract using the parsed filename
-#                subprocess.run(['cpmcp', '-f', imgformat, current_filename, filename, filename])
-#    except subprocess.CalledProcessError as e:
-#        messagebox.showerror("Error", f"Error extracting item '{item}': {e}")
-#
+
+#    destination_directory = "./extracted_files/"
+#    if not os.path.exists(destination_directory):
+#        os.makedirs(destination_directory)
+
+#    for idx in selected_items:
+#        item = listbox.get(idx)
+#        usernum = item[:2].strip()
+#        original_filename = item[3:15].replace(" ", "")
+#        filename = original_filename                                            # Start with the original filename
+
+#        dest = os.path.join(destination_directory, filename)
+#        while os.path.exists(dest):
+                                                                                # Prompt for a new filename due to duplicate
+#            new_filename = askstring("File Exists", f"The file {filename} already exists. Enter a new filename:")
+#            if new_filename is None or new_filename.strip() == "":
+#                messagebox.showinfo("Extraction Cancelled", "Extraction cancelled for the current item.")
+#                break                                                           # Exit the loop and skip to the next selected item
+
+                                                                                # Update filename and dest with the new name provided by the user
+#            filename = new_filename.strip()                                     # Ensure we strip any leading/trailing spaces
+#            dest = os.path.join(destination_directory, filename)
+
+#        if not os.path.exists(dest):
+#            try:                                                                # Proceed with extraction only if the destination does not exist (i.e., user provided a new name)
+#                src = f"{usernum}:{original_filename}"                          # src still uses the original filename from the listbox
+#                subprocess.run(['cpmcp', '-f', imgformat, current_filename, src, dest], check=True)
+#            except subprocess.CalledProcessError as e:
+#                messagebox.showerror("Extraction Error", f"Failed to extract '{original_filename}': {e}")
+#                continue
+
 #    listbox.selection_clear(0, tk.END)
+#    messagebox.showinfo("Extraction Complete", "Selected files have been extracted to " + destination_directory)
 
 def extract_items():
     global current_filename
@@ -351,93 +349,151 @@ def extract_items():
         messagebox.showinfo("No Image Open", "Please open an image file before attempting to extract files.")
         return
 
-    selected_items = listbox.curselection()
+    selected_items = tree.selection()  # Use .selection() for Treeview
     if not selected_items:
         messagebox.showinfo("No Items Selected", "Please select one or more items to extract.")
         return
 
-    destination_directory = "./extracted_files/"
-    if not os.path.exists(destination_directory):
-        os.makedirs(destination_directory)
+    # Prompt the user for the extraction directory, defaulting to the current working directory
+    destination_directory = filedialog.askdirectory(initialdir=os.getcwd(), title="Select Extraction Directory")
+    if not destination_directory:  # If the user cancels the dialog
+        messagebox.showinfo("Extraction Cancelled", "Extraction cancelled by user.")
+        return
 
-    for idx in selected_items:
-        item = listbox.get(idx)
-        usernum = item[:2].strip()
-        original_filename = item[3:15].replace(" ", "")
-        filename = original_filename  # Start with the original filename
+    for item_id in selected_items:
+        item_values = tree.item(item_id, 'values')
+        usernum, filename, _ = item_values                                      # Assuming the 'values' are in the order (usernum, filename, size)
+        filename = filename.replace(" ", "")                                    # Remove internal spaces from filename
 
-        dest = os.path.join(destination_directory, filename)
-        while os.path.exists(dest):
-            # Prompt for a new filename due to duplicate
-            new_filename = askstring("File Exists", f"The file {filename} already exists. Enter a new filename:")
-            if new_filename is None or new_filename.strip() == "":
-                messagebox.showinfo("Extraction Cancelled", "Extraction cancelled for the current item.")
-                break  # Exit the loop and skip to the next selected item
+        src_path = f"{usernum}:{filename}"  # Construct the source path
+        dest_path = os.path.join(destination_directory, filename)
 
-            # Update filename and dest with the new name provided by the user
-            filename = new_filename.strip()  # Ensure we strip any leading/trailing spaces
-            dest = os.path.join(destination_directory, filename)
+        # Execute the cpmcp command
+        try:
+            cmd = ['cpmcp', '-f', imgformat, current_filename, src_path, dest_path]
+            debug_print("Executing command:", ' '.join(cmd))                    # Print the command for troubleshooting
+            subprocess.run(cmd, check=True)
+        except subprocess.CalledProcessError as e:
+            messagebox.showerror("Extraction Error", f"Failed to extract '{filename}': {e}")
 
-        if not os.path.exists(dest):
-            # Proceed with extraction only if the destination does not exist (i.e., user provided a new name)
-            try:
-                src = f"{usernum}:{original_filename}"  # src still uses the original filename from the listbox
-                subprocess.run(['cpmcp', '-f', imgformat, current_filename, src, dest], check=True)
-            except subprocess.CalledProcessError as e:
-                messagebox.showerror("Extraction Error", f"Failed to extract '{original_filename}': {e}")
-                continue
+    messagebox.showinfo("Extraction Complete", "Selected files have been extracted.")
 
-    listbox.selection_clear(0, tk.END)
-    messagebox.showinfo("Extraction Complete", "Selected files have been extracted to " + destination_directory)
+#def delete_items():
+#    global current_filename
+#    if not current_filename:
+#        return
+
+#    selected_items = listbox.curselection()
+#    if not selected_items:
+#        messagebox.showinfo("No Items Selected", "Please select one or more items to delete.")
+#        return
+
+#    if not confirm_delete():
+#        return
+
+#    try:
+#        for idx in selected_items:
+#            item = listbox.get(idx)
+#            subprocess.run(['cpmrm', '-f', imgformat, current_filename, item], capture_output=True, text=True)
+#            refresh_listbox()                                                   # Refresh listbox after deletion
+#    except subprocess.CalledProcessError as e:
+#        messagebox.showerror("Error", f"Failed to delete items: {e}")
 
 def delete_items():
     global current_filename
     if not current_filename:
+        messagebox.showinfo("No Image Open", "Please open an image file before attempting to delete files.")
         return
 
-    selected_items = listbox.curselection()
+    selected_items = tree.selection()  # Get selected items' IDs
     if not selected_items:
         messagebox.showinfo("No Items Selected", "Please select one or more items to delete.")
         return
 
-    if not confirm_delete():
+    if not confirm_delete():  # Confirm deletion from the user
         return
 
     try:
-        for idx in selected_items:
-            item = listbox.get(idx)
-            subprocess.run(['cpmrm', '-f', imgformat, current_filename, item], capture_output=True, text=True)
-            refresh_listbox()                                                   # Refresh listbox after deletion
+        for item_id in selected_items:
+            item_values = tree.item(item_id, 'values')
+            usernum, filename, _ = item_values  # Assuming the 'values' are in the order (usernum, filename, size)
+            filename = filename.replace(" ", "")  # Adjust as necessary based on how filenames are stored
+
+            # Construct the source path for deletion
+            src_path = f"{usernum}:{filename}"
+            cmd = ['cpmrm', '-f', imgformat, current_filename, src_path]
+            debug_print("Executing command:", ' '.join(cmd))  # Optional: Print the command for troubleshooting
+            subprocess.run(cmd, check=True)
+            
+            # Remove the item from the treeview
+            tree.delete(item_id)
+
     except subprocess.CalledProcessError as e:
-        messagebox.showerror("Error", f"Failed to delete items: {e}")
+        messagebox.showerror("Deletion Error", f"Failed to delete the selected items: {e}")
+
+    # Optionally, refresh the treeview to reflect the current state
+    refresh_listbox()
+
+def prompt_user_number():
+    while True:
+        usernum = simpledialog.askstring("User Number", "Enter the user number (0-15):")
+        if usernum is None:  # User cancelled the dialog
+            return None
+        try:
+            usernum = int(usernum)
+            if 0 <= usernum <= 15:
+                return usernum
+            else:
+                messagebox.showerror("Error", "User number must be between 0 and 15.")
+        except ValueError:
+            messagebox.showerror("Error", "Please enter a valid integer.")
+
+def validate_and_correct_filename(initial_filename):
+    
+    restricted_chars = '<>,;:=?*[]%|()\\'                                        # Define CP/M restricted characters and 8.3 filename pattern
+    pattern = re.compile("^[^.]{1,8}(.[^.]*)?$")  # Basic 8.3 pattern check
+    
+    filename = initial_filename
+    while True:
+        if any(char in restricted_chars for char in filename) or not pattern.match(filename):
+            messagebox.showerror("Invalid Filename", "Filename must comply with 8.3 format and not contain restricted characters.")
+            filename = simpledialog.askstring("Correct Filename", "Enter a new filename:", initialvalue=filename)
+            if filename is None:  # User cancelled
+                return None
+        else:
+            return filename
 
 def import_files():
     global current_filename
     if not current_filename:
         messagebox.showinfo("No Image Open", "Please open an image file before importing.")
         return
+    
+    # Prompt for the file to import
+    filename_to_import = filedialog.askopenfilename(title="Select file to import")
+    if not filename_to_import:
+        return  # User cancelled the dialog
 
-    filetypes = [('All files', '*')]
-    filenames = filedialog.askopenfilenames(filetypes=filetypes)
-    if not filenames:
-        return
+    basename = os.path.basename(filename_to_import)
+    corrected_filename = validate_and_correct_filename(basename.replace(" ", "_"))  # Initial correction for spaces
+    if corrected_filename is None:
+        return  # User cancelled or failed to provide a valid filename
+    
+    usernum = prompt_user_number()
+    if usernum is None:
+        return  # User cancelled the usernum dialog
 
-    target_user = tk.simpledialog.askinteger("Target User Number", "Enter the target user number (0-15):", initialvalue=0, minvalue=0, maxvalue=15)
-    if target_user is None:                                                     # Cancel button clicked
-        return
-
+    # Execute the cpmcp command
     try:
-        for filename in filenames:
-            result = subprocess.run(['cpmcp', '-f', imgformat, current_filename, f'{filename}', f'{target_user}:{os.path.basename(filename)}'], capture_output=True, text=True)
-            if "device full" in result.stdout.lower():
-                messagebox.showinfo("Image Full", "The disk image is full. Import aborted.")
-                break                                                           # Abort import if image is full
-        else:
-            messagebox.showinfo("Import Successful", "Files imported successfully.")
-            refresh_listbox()                                                   # Refresh listbox after successful import
+        cmd = ['cpmcp', '-f', imgformat, current_filename, filename_to_import, f'{usernum}:{corrected_filename}']
+        debug_print("Executing command:", ' '.join(cmd))                        # Print the command for troubleshooting
+        result = subprocess.run(cmd, check=True, text=True, capture_output=True)
+        if "device full" in result.stderr.lower():
+            messagebox.showerror("Insufficient room", "The CP/M device is full.")
     except subprocess.CalledProcessError as e:
-        messagebox.showerror("Error", f"Failed to import files: {e}")
-
+        messagebox.showerror("Import Error", f"Failed to import '{corrected_filename}': {e}")
+    refresh_listbox()
+    
 def confirm_delete():
     return messagebox.askokcancel("Confirm Delete", "Are you sure you want to delete the selected item(s)?")
 
@@ -546,8 +602,13 @@ def populate_format_menu():
     except Exception as e:
         messagebox.showerror("Error", f"Failed to retrieve diskdefs: {e}")
 
+def update_footer(file_count, total_size, free_space):
+    footer_text = f"Files: {file_count}, Total Size: {total_size}K, Free Space: {free_space}K"
+    footer_label.config(text=footer_text)
+
 def select_all(event=None):
-    listbox.select_set(0, tk.END)
+    items = tree.get_children()                                                 # Get a list of all item IDs in the Treeview
+    tree.selection_set(items)                                                   # Select all items
 
 def create_new_image():
     default_filename = "NEW.IMG"
@@ -567,12 +628,19 @@ def create_new_image():
 root = tk.Tk()
 root.title("CPMImage")
 root.resizable(True, True)
+root.geometry("400x400")
+root.bind_all("<q>",         lambda event: on_close())
 root.bind_all("<Control-q>", lambda event: on_close())
+root.bind_all("<o>",         lambda event: open_image())
 root.bind_all("<Control-o>", lambda event: open_image())
+root.bind_all("<w>",         lambda event: close_image())
 root.bind_all("<Control-w>", lambda event: close_image())
+root.bind_all("<e>",         lambda event: extract_items())
 root.bind_all("<Control-e>", lambda event: extract_items())
+root.bind_all("<i>",         lambda event: import_files())
+root.bind_all("<Control-i>", lambda event: import_files())
 root.bind_all("<F5>",        lambda event: populate_listbox(current_filename))
-root.bind_all("<Control-a>", select_all)
+root.bind_all("<r>",         lambda event: populate_listbox(current_filename))
 root.protocol("WM_DELETE_WINDOW", on_close)
 
 menubar = tk.Menu(root)
@@ -614,12 +682,27 @@ settings_menu.add_separator()
 settings_menu.add_checkbutton(label="Debug Mode", command=toggle_debug_mode)    # Keep the toggle for debug mode if needed
 menubar.add_cascade(label="Settings", menu=settings_menu)
 
-# Listbox is the main file listing window
+frame = ttk.Frame(root)
+frame.pack(fill='both', expand=True)  # This frame will contain the Treeview
 
-listbox = tk.Listbox(root, selectmode=tk.MULTIPLE, fg=initial_text_color, bg=initial_bg_color, font=initial_font, borderwidth=initial_border_width, width=initial_width, height=initial_height)
-listbox.pack(fill=tk.BOTH, expand=True, padx=initial_padding_x, pady=initial_padding_y)
-listbox.bind('<<ListboxSelect>>', on_select)
-listbox.bind('<<ListboxSelect>>', on_listbox_select)
+columns = ('un', 'name', 'size')
+tree = ttk.Treeview(frame, columns=columns, show='headings', height=15)
+tree.pack(fill='both', expand=True)  # Pack the Treeview widget once
+tree.heading('un', text='U#')
+tree.heading('name', text='Name')
+tree.heading('size', text='Size (K)')
+tree.column('un', width=30, anchor='center')
+tree.column('name', width=150, anchor='w')
+tree.column('size', width=100, anchor='center')
+tree.bind('<Control-a>', select_all)
+for col in columns:
+    tree.heading(col, text=col.capitalize(), command=lambda _col=col: treeview_sort_column(tree, _col, False))
+
+footer_frame = ttk.Frame(root)
+footer_frame.pack(fill=tk.X, side='bottom', expand=False)  # Ensure footer is at the bottom
+footer_label = ttk.Label(footer_frame, text="Initializing...", anchor="w")
+footer_label.pack(fill=tk.X, padx=5, pady=5)  # Ensure label fills the footer frame
+
 
 open_file_or_dialog()
 
