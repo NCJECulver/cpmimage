@@ -25,7 +25,7 @@
 
 # 6. Keyboard Shortcuts: Include keyboard shortcuts for menu items to enhance usability, especially 
 #    for actions like opening, closing, and saving images.
-#  STATUS: COMPLETED (moving target)
+#  STATUS: completed ?
 
 # 7. UI Improvements: Depending on your requirements, you may want to consider adding features such as
 #      - drag-and-drop support, 
@@ -58,11 +58,6 @@
 #        * Item Alignment: Allow users to customize the alignment of text within listbox items, including 
 #          options such as left-align, center-align, and right-align. This ensures flexibility in presenting 
 #          different types of data in the listbox.
-# 8. File Viewer - text and binary file viewer capability.
-#        * Attempt to auto-detect char encoding. COMPLETED.
-#        * ASCII and binary modes. COMPLETED.
-#        * Allow switching between view modes from within the viewer. PENDING.
-#        * Search within file. PENDING.
 
 import tkinter as tk
 import tkinter.font as tkFont
@@ -73,8 +68,6 @@ import re
 import sys
 import os
 import argparse
-import tempfile
-import chardet                                                                  # Detecting char encoding for file viewer; "pip install chardet" to install
 
 initial_text_color = 'black'
 initial_bg_color = 'white'
@@ -108,171 +101,70 @@ def debug_print(*args):
     if debug_mode:
         print(*args)
 
-#-------------------------------------------------------------------------------------------------------------
-# UI Customization functions                                                                                 #
-#---------------------------                                                                                 #
-                                                                                                             #
-def choose_text_color():                                                                                     #
-    color_code = colorchooser.askcolor(title="Choose text color")[1]                                         #
-    if color_code:                                                                                           #
-        listbox.config(fg=color_code)                                                                        #
-                                                                                                             #
-def update_text_color():                                                                                     #
-    global initial_text_color                                                                                #
-    color_code = colorchooser.askcolor(title="Choose text color")[1]                                         #
-    if color_code:                                                                                           #
-        initial_text_color = color_code                                                                      #
-        listbox.config(fg=initial_text_color)                                                                #
-                                                                                                             #
-def choose_bg_color():                                                                                       #
-    color_code = colorchooser.askcolor(title="Choose background color")[1]                                   #
-    if color_code:                                                                                           #
-        listbox.config(bg=color_code)                                                                        #
-                                                                                                             #
-def update_bg_color():                                                                                       #
-    global initial_bg_color                                                                                  #
-    color_code = colorchooser.askcolor(title="Choose background color")[1]                                   #
-    if color_code:                                                                                           #
-        initial_bg_color = color_code                                                                        #
-        listbox.config(bg=initial_bg_color)                                                                  #
-                                                                                                             #
-def choose_select_bg_color():                                                                                #
-    color_code = colorchooser.askcolor(title="Choose selection background color")[1]                         #
-    if color_code:                                                                                           #
-        listbox.config(selectbackground=color_code)                                                          #
-                                                                                                             #
-def choose_select_fg_color():                                                                                #
-    color_code = colorchooser.askcolor(title="Choose selection text color")[1]                               #
-    if color_code:                                                                                           #
-        listbox.config(selectforeground=color_code)                                                          #
-                                                                                                             #
-def update_padding():                                                                                        #
-    global initial_padding_x, initial_padding_y                                                              #
-    new_padx = simpledialog.askinteger("Padding", "Enter horizontal padding (pixels):", minvalue=0)          #
-    new_pady = simpledialog.askinteger("Padding", "Enter vertical padding (pixels):", minvalue=0)            #
-    if new_padx is not None and new_pady is not None:                                                        #
-        initial_padding_x = new_padx                                                                         #
-        initial_padding_y = new_pady                                                                         #
-        listbox.pack_configure(padx=initial_padding_x, pady=initial_padding_y)                               #
-                                                                                                             #
-def customize_border():                                                                                      #
-    new_border_width = simpledialog.askinteger("Border Width", "Enter border width (pixels):", minvalue=0)   #
-    new_highlight_thickness = simpledialog.askinteger("Highlight Thickness", "Enter highlight thickness (pixels):", minvalue=0)
-    if new_border_width is not None:                                                                         # Check if the user made a selection
-        listbox.config(borderwidth=new_border_width, highlightthickness=new_highlight_thickness)             #
-                                                                                                             #
-def customize_padding():                                                                                     #
-    new_padx = simpledialog.askinteger("Padding", "Enter horizontal padding (pixels):", minvalue=0)          #
-    new_pady = simpledialog.askinteger("Padding", "Enter vertical padding (pixels):", minvalue=0)            #
-    if new_padx is not None and new_pady is not None:                                                        # Check if the user made a selection
-        listbox.config(padx=new_padx, pady=new_pady)                                                         #
-                                                                                                             #
-#-------------------------------------------------------------------------------------------------------------
+def choose_text_color():
+    color_code = colorchooser.askcolor(title="Choose text color")[1]
+    if color_code:
+        listbox.config(fg=color_code)
 
-#-------------------------------------------------------------------------------------------------------------
-# File Viewer functions                                                                                      #
-#----------------------                                                                                      #
-                                                                                                             #
-def is_binary(filename):                                                                                     #
-    """                                                                                                      #
-    Attempt to determine if a file is binary or text.                                                        #
-    Reads a sample of the file's contents and checks for non-text characters.                                #
-    """                                                                                                      #
-    try:                                                                                                     #
-        with open(filename, 'rb') as file:                                                                   #
-            sample = file.read(1024)  # Read the first 1024 bytes of the file                                #
-            if b'\0' in sample:                                                                              #
-                return True  # Found null byte, likely a binary file                                         #
-            # Use chardet to detect encoding and check if it's binary                                        #
-            detected = chardet.detect(sample)                                                                #
-            if detected['encoding'] is None:                                                                 #
-                return True  # Encoding could not be detected, likely binary                                 #
-    except Exception as e:                                                                                   #
-        print(f"Error checking if file is binary: {e}")                                                      #
-    return False                                                                                             #
-                                                                                                             #
-def view_selected_file():                                                                                    #
-    selected_items = tree.selection()                                                                        #
-    if not selected_items:                                                                                   #
-        messagebox.showinfo("No File Selected", "Please select a file to view.")                             #
-        return                                                                                               #
-                                                                                                             #
-    for item_id in selected_items:                                                                           #
-        item_values = tree.item(item_id, 'values')                                                           #
-        usernum, filename, _ = item_values                                                                   #
-                                                                                                             #
-        src_path = f"{usernum}:{filename}"                                                                   #
-        temp_dir = tempfile.mkdtemp()                                                                        #
-        dest_path = os.path.join(temp_dir, filename)                                                         #
-                                                                                                             #
-        try:                                                                                                 #
-            subprocess.run(['cpmcp', '-f', imgformat, current_filename, src_path, dest_path], check=True)    #
-            # Attempt to automatically detect encoding                                                       #
-            raw_data = open(dest_path, 'rb').read()                                                          #
-            result = chardet.detect(raw_data)                                                                #
-            encoding = result['encoding']                                                                    #
-                                                                                                             #
-            if encoding:                                                                                     #
-                with open(dest_path, 'r', encoding=encoding, errors='replace') as file:                      #
-                    file_contents = file.read()                                                              #
-                    display_file_viewer(filename, file_contents)                                             #
-            else:                                                                                            #
-                # If encoding could not be detected, default to binary view                                  #
-                display_binary_viewer(filename, raw_data)                                                    #
-        except Exception as e:                                                                               #
-            messagebox.showerror("Error", f"Failed to view '{filename}': {e}")                               #
-        finally:                                                                                             #
-            os.remove(dest_path)                                                                             #
-            os.rmdir(temp_dir)                                                                               #
-                                                                                                             #
-def display_binary_viewer(filename, data):                                                                   #
-    viewer_window = tk.Toplevel(root)                                                                        #
-    viewer_window.title(f"Viewing {filename} (Binary)")                                                      #
-    text_area = tk.Text(viewer_window, wrap="none", font=("Consolas", 10))                                   #
-    text_area.pack(expand=True, fill="both")                                                                 #
-                                                                                                             #
-    # Convert data to hexadecimal and ASCII side by side                                                     #
-    hex_data = []                                                                                            #
-    ascii_data = []                                                                                          #
-    for byte in data:                                                                                        #
-        hex_data.append(f"{byte:02X}")                                                                       #
-        ascii_data.append(chr(byte) if 32 <= byte <= 126 else '.')                                           #
-                                                                                                             #
-    # Group data into lines of 16 bytes                                                                      #
-    lines = []                                                                                               #
-    for i in range(0, len(hex_data), 16):                                                                    #
-        hex_part = " ".join(hex_data[i:i+16])                                                                #
-        ascii_part = "".join(ascii_data[i:i+16])                                                             #
-        line = f"{hex_part:<48} {ascii_part}"                                                                #
-        lines.append(line)                                                                                   #
-                                                                                                             #
-    text_area.insert("1.0", "\n".join(lines))                                                                #
-    text_area.config(state="disabled")                                                                       #
-                                                                                                             #
-    # Add scrollbar                                                                                          #
-    scrollbar = tk.Scrollbar(viewer_window, command=text_area.yview)                                         #
-    scrollbar.pack(side="right", fill="y")                                                                   #
-    text_area.config(yscrollcommand=scrollbar.set)                                                           #
-                                                                                                             #
-def display_file_viewer(filename, contents):                                                                 #
-    viewer_window = tk.Toplevel(root)                                                                        #
-    viewer_window.title(f"Viewing {filename}")                                                               #
-    text_area = tk.Text(viewer_window, wrap="none")                                                          #
-    text_area.pack(expand=True, fill="both")                                                                 #
-    text_area.insert("1.0", contents)                                                                        #
-    text_area.config(state="disabled")  # Make text area read-only                                           #
-                                                                                                             #
+def update_text_color():
+    global initial_text_color
+    color_code = colorchooser.askcolor(title="Choose text color")[1]
+    if color_code:
+        initial_text_color = color_code
+        listbox.config(fg=initial_text_color)
+
+def choose_bg_color():
+    color_code = colorchooser.askcolor(title="Choose background color")[1]
+    if color_code:
+        listbox.config(bg=color_code)
+
+def update_bg_color():
+    global initial_bg_color
+    color_code = colorchooser.askcolor(title="Choose background color")[1]
+    if color_code:
+        initial_bg_color = color_code
+        listbox.config(bg=initial_bg_color)
+
+def choose_select_bg_color():
+    color_code = colorchooser.askcolor(title="Choose selection background color")[1]
+    if color_code:
+        listbox.config(selectbackground=color_code)
+
+def choose_select_fg_color():
+    color_code = colorchooser.askcolor(title="Choose selection text color")[1]
+    if color_code:
+        listbox.config(selectforeground=color_code)
+
+def update_padding():
+    global initial_padding_x, initial_padding_y
+    new_padx = simpledialog.askinteger("Padding", "Enter horizontal padding (pixels):", minvalue=0)
+    new_pady = simpledialog.askinteger("Padding", "Enter vertical padding (pixels):", minvalue=0)
+    if new_padx is not None and new_pady is not None:
+        initial_padding_x = new_padx
+        initial_padding_y = new_pady
+        listbox.pack_configure(padx=initial_padding_x, pady=initial_padding_y)
+
+def customize_border():
+    new_border_width = simpledialog.askinteger("Border Width", "Enter border width (pixels):", minvalue=0)
+    new_highlight_thickness = simpledialog.askinteger("Highlight Thickness", "Enter highlight thickness (pixels):", minvalue=0)
+    if new_border_width is not None:                                            # Check if the user made a selection
+        listbox.config(borderwidth=new_border_width, highlightthickness=new_highlight_thickness)
+
+def customize_padding():
+    new_padx = simpledialog.askinteger("Padding", "Enter horizontal padding (pixels):", minvalue=0)
+    new_pady = simpledialog.askinteger("Padding", "Enter vertical padding (pixels):", minvalue=0)
+    if new_padx is not None and new_pady is not None:                           # Check if the user made a selection
+        listbox.config(padx=new_padx, pady=new_pady)
+
 def update_listbox_font():                                                      # Prompt the user for font, size, and weight
-    font_spec = simpledialog.askstring("Font", "Enter font (e.g., 'Arial 12 bold'):")                        #
-                                                                                                             #
+    font_spec = simpledialog.askstring("Font", "Enter font (e.g., 'Arial 12 bold'):")
+    
     if font_spec:                                                               # Check if the user provided a value
         try:                                                                    # Create a font object with the user's specifications
-            new_font = tkFont.Font(font=font_spec)                                                           #
-            listbox.config(font=new_font)                                                                    #
-        except tk.TclError:                                                                                  #
-            tk.messagebox.showerror("Error", "Invalid font specification.")                                  #
-                                                                                                             #
-#-------------------------------------------------------------------------------------------------------------
+            new_font = tkFont.Font(font=font_spec)
+            listbox.config(font=new_font)
+        except tk.TclError:
+            tk.messagebox.showerror("Error", "Invalid font specification.")
 
 def open_image():
     global current_filename, last_used_directory                                # Ensure we're modifying the global variables
@@ -769,11 +661,8 @@ menubar.add_cascade(label="File", menu=file_menu, underline=0)
 
 image_menu = tk.Menu(menubar, tearoff=0)
 image_menu.add_command(label="Extract", command=extract_items, accelerator="Ctrl+E", underline=0)
-image_menu.add_command(label="Import...", command=import_files, accelerator="Ctrl+I", underline=0)
-file_menu.add_separator()
-image_menu.add_command(label="View File", command=view_selected_file, accelerator="Ctrl+V")
 image_menu.add_command(label="Delete item(s)", command=delete_items, accelerator="Delete", underline=0)
-file_menu.add_separator()
+image_menu.add_command(label="Import...", command=import_files, accelerator="Ctrl+I", underline=0)
 image_menu.add_command(label="Refresh", command=lambda: populate_listbox(current_filename), accelerator="F5", underline=0)
 menubar.add_cascade(label="Image", menu=image_menu, underline=0)
 
