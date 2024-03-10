@@ -59,8 +59,8 @@
 #        * Attempt to auto-detect char encoding. COMPLETED.
 #        * ASCII and binary modes. COMPLETED.
 #        * Allow switching between view modes from within the viewer. COMPLETED.
-#        * Search within file. COMPLETED
-#        * Go to offset functionality in binary viewer. COMPLETED.
+#        * Search within file. IN PLACE BUT BUGGY.
+#        * Go to offset functionality in binary viewer. IN PLACE BUT BUGGY
 #        * Handling of special file types:
 #                - squeezed COMPLETED but buggy; can't handle files with / in name
 #                - crunched COMPLETED but untested; uses same code as squeeze so should be ok
@@ -69,7 +69,6 @@
 # 10 Drag-and-drop PENDING
 # 11 Persistent appplication state - saving the application state between sessions, such as window size and
 #    position, last opened directory, and other user preferences. PENDING
-# 12 Extraction and importing of system tracks. PENDING
 
 #----------------------------------------------------------------------------------------------------------------------------------
 # Python imports                                                                                                                  #
@@ -202,16 +201,19 @@ def display_viewer(filename, raw_data, initial_mode='text'):                    
     :param initial_mode: Initial viewing mode ('text' or 'binary').                                                               #
     """                                                                                                                           #
     def on_focus_in(event):                                                     # When focus enter the text entry field           #
-        # place here any code you want to run when the search field is entered                                                    #
-        pass                                                                                                                      #
+        if action_entry.get() == "Enter text to search for":                    # If placeholder_text found, clear it             #
+            action_entry.delete(0, tk.END)                                      # Clear the text                                  #
+            action_entry.config(fg='black')                                     # Change text color to black                      #
                                                                                                                                   #
     def on_focus_out(event):                                                    # When focus leaves the text entry field          #
-        # place here any code you want to run when the search field is exited                                                     #
-        pass                                                                                                                      #
+        if not action_entry.get():                                              # If the entry is empty, reset the placeholder    #
+            action_entry.config(fg='grey')                                      # Change text color to grey                       #
+            placeholder_text.set("Enter text to search for")                    # Reset placeholder                               #
                                                                                                                                   #
     def on_search(event=None):                                                  # Doing a search                                  #
         search_target = action_entry.get().strip().lower()                      # Case-insensitive                                #
-        if search_target:                                                                                                         #
+        debug_print("Search target string: ", search_target)                                                                      #
+        if search_target and search_target != placeholder_text.get().lower():                                                     #
             start_index = '1.0'                                                                                                   #
             text_area.tag_remove('found', '1.0', tk.END)                        # Clear previous highlights                       #
             while True:                                                                                                           #
@@ -225,13 +227,6 @@ def display_viewer(filename, raw_data, initial_mode='text'):                    
             first_occurrence = text_area.tag_ranges('found')                                                                      #
             if first_occurrence:                                                                                                  #
                 text_area.see(first_occurrence[0])                              # Scroll to first occurrence                      #
-                                                                                                                                  #
-    def on_search_button_clicked():                                                                                               #
-        search_target = action_entry.get().strip()                              # Get the trimmed content of the entry field      #
-        if not search_target:                                                   # If the search field is empty                    #
-            messagebox.showwarning("Search Error", "Please enter text to search for.")                                            #
-        else:                                                                                                                     #
-            on_search()                                                         # Call your existing on_search function           #
                                                                                                                                   #
     def toggle_mode():                                                                                                            #
         nonlocal viewing_mode                                                                                                     #
@@ -259,8 +254,7 @@ def display_viewer(filename, raw_data, initial_mode='text'):                    
     # Main viewer window                                                                                                          #
     viewer_window = tk.Toplevel(root)                                                                                             #
     viewer_window.title(f"Viewing {filename}")                                                                                    #
-    viewer_window.bind('<Control-f>', lambda event: action_entry.focus()) # Bind Ctrl-F to focus on the search entry field        #
-                                                                                                                                  #    
+                                                                                                                                  #
     # Text window                                                                                                                 #
     text_area = tk.Text(viewer_window, wrap="none", font=("Consolas", 10))                                                        #
     text_area.pack(expand=True, fill="both")                                                                                      #
@@ -272,16 +266,13 @@ def display_viewer(filename, raw_data, initial_mode='text'):                    
     # "Switch Mode" button                                                                                                        #
     viewing_mode = initial_mode                                                                                                   #
     toggle_button = tk.Button(control_frame, text=f"Switch to {'Text' if viewing_mode == 'binary' else 'Hex'} Mode",              #
-                              command=lambda: toggle_mode(), underline=0)                                                         #
+                              command=lambda: [toggle_mode(), update_placeholder()],underline=0)                                  #
     toggle_button.pack(side=tk.LEFT, padx=(5, 0))                                                                                 #
     viewer_window.bind('<Alt-s>', lambda event: toggle_mode())                                                                    #
                                                                                                                                   #
-   # Search button                                                                                                                #
-    search_button = tk.Button(control_frame, text="Search", command=on_search_button_clicked)                                     #
-    search_button.pack(side=tk.LEFT, padx=(5, 5))  # Adjust padx as needed for spacing                                            #
-                                                                                                                                  #
     # Search entry field                                                                                                          #
-    action_entry = tk.Entry(control_frame, width=60)                                                                              #
+    placeholder_text = tk.StringVar(value="Enter text to search for")           # Define a placeholder text for the entry field   #
+    action_entry = tk.Entry(control_frame, textvariable=placeholder_text, fg='grey', width=60)                                    #
     action_entry.bind("<FocusIn>", on_focus_in)                                                                                   #
     action_entry.bind("<FocusOut>", on_focus_out)                                                                                 #
     action_entry.bind("<Return>", on_search)                                    # Bind Enter to on_search                         #
