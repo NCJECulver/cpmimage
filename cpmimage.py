@@ -1,3 +1,7 @@
+# Work in progress
+# 2024-03-11
+#    -- Added filename translation
+
 # TO DO
 
 # 2. Handling of Initial Directory in open_image: Currently, the initial directory for opening
@@ -70,6 +74,10 @@
 # 11 Persistent appplication state - saving the application state between sessions, such as window size and
 #    position, last opened directory, and other user preferences. PENDING
 # 12 Extraction and importing of system tracks. PENDING
+# 13 Rename files - there's no cpmtool for in-place renaming. So what? export/delete/import?
+# 14 Change file's user number - see rename above - no direct way to do it with cpmtools, so extract/delete/
+#       import to new user?
+# 15 Filename translation COMPLETED.
 
 #----------------------------------------------------------------------------------------------------------------------------------
 # Python imports                                                                                                                  #
@@ -78,16 +86,16 @@ import tkinter as tk                                                            
 import tkinter.font as tkFont                                                                                                     #
 from tkinter import filedialog, messagebox, simpledialog, colorchooser, ttk                                                       #
 from tkinter.simpledialog import askstring                                                                                        #
-import configparser                                                                        # for maintaining a configuration file #
+import configparser                                                             # for maintaining a configuration file            #
 import subprocess                                                                                                                 #
 import re                                                                                                                         #
 import sys                                                                                                                        #
 import os                                                                                                                         #
 import argparse                                                                                                                   #
 import tempfile                                                                                                                   #
-import chardet                                                                      # Detect char encoding; "pip install chardet" #
-import shutil                                                                                        # Python until to move files #
-import atexit                                                                           # If app is closed or exits unexpectedly. #
+import chardet                                                                  # Detect char encoding; "pip install chardet"     #
+import shutil                                                                   # Python until to move files                      #
+import atexit                                                                   # If app is closed or exits unexpectedly.         #
 #----------------------------------------------------------------------------------------------------------------------------------
 #                                         =================================
 #----------------------------------------------------------------------------------------------------------------------------------
@@ -102,7 +110,7 @@ initial_padding_y = 5                                                           
 initial_width=50                                                                                                                  #
 initial_height=30                                                                                                                 #
 temp_dir = None                                                                                                                   #
-recent_files = []                                                        # Recently opened files; tuplets with filename/imgformat #
+recent_files = []                                                               # Recently opened files; tuplets w fname/imgformat#
 parser = argparse.ArgumentParser(description='CPMImage application')                                                              #
 parser.add_argument('-f', '--format', help='Specify the disk format', default='ibm-3740')                                         #
 parser.add_argument('filename', nargs='?', help='Filename of the image to open', default='')                                      #
@@ -114,6 +122,11 @@ debug_mode = True                                                               
                                                                                                                                   #
 last_used_directory = os.getcwd()                                               # Init last used dir to current working dir       #
 config_file_path = 'cpmimage.cfg'                                                                                                 #
+character_mappings = [                                                          # For translating filenames. E.g., the CP/M file  #
+    ('/', '_'),                                                                 # CP/M&NET.$$$ would be exported to CP_M%NET.===  #
+    ('&', '%'),                                                                 # on the host. Importing files would be reversed. #
+    ('$', '=')                                                                                                                    #
+]                                                                                                                                 #
 #----------------------------------------------------------------------------------------------------------------------------------
 #                                         =================================
 #----------------------------------------------------------------------------------------------------------------------------------
@@ -182,13 +195,13 @@ def update_padding():                                                           
 def customize_border():                                                                                                           #
     new_border_width = simpledialog.askinteger("Border Width", "Enter border width (pixels):", minvalue=0)                        #
     new_highlight_thickness = simpledialog.askinteger("Highlight Thickness", "Enter highlight thickness (pixels):", minvalue=0)   #
-    if new_border_width is not None:                                                         # Check if the user made a selection #
+    if new_border_width is not None:                                            # Check if the user made a selection              #
         listbox.config(borderwidth=new_border_width, highlightthickness=new_highlight_thickness)                                  #
                                                                                                                                   #
 def customize_padding():                                                                                                          #
     new_padx = simpledialog.askinteger("Padding", "Enter horizontal padding (pixels):", minvalue=0)                               #
     new_pady = simpledialog.askinteger("Padding", "Enter vertical padding (pixels):", minvalue=0)                                 #
-    if new_padx is not None and new_pady is not None:                                        # Check if the user made a selection #
+    if new_padx is not None and new_pady is not None:                           # Check if the user made a selection              #
         listbox.config(padx=new_padx, pady=new_pady)                                                                              #
 #----------------------------------------------------------------------------------------------------------------------------------
 #                                         =================================
@@ -197,7 +210,7 @@ def customize_padding():                                                        
 #----------------------                                                                                                           #
 def display_viewer(filename, raw_data, initial_mode='text'):                                                                      #
     """                                                                         # Display the file viewer window with support for #
-    :param filename: Name of the file being viewed.                             #   switching between text and binary (hex) modes.#
+    :param filename: Name of the file being viewed.                             # switching between text and binary (hex) modes.  #
     :param raw_data: The raw binary content of the file.                                                                          #
     :param initial_mode: Initial viewing mode ('text' or 'binary').                                                               #
     """                                                                                                                           #
@@ -259,7 +272,7 @@ def display_viewer(filename, raw_data, initial_mode='text'):                    
     # Main viewer window                                                                                                          #
     viewer_window = tk.Toplevel(root)                                                                                             #
     viewer_window.title(f"Viewing {filename}")                                                                                    #
-    viewer_window.bind('<Control-f>', lambda event: action_entry.focus()) # Bind Ctrl-F to focus on the search entry field        #
+    viewer_window.bind('<Control-f>', lambda event: action_entry.focus())       # Bind Ctrl-F to focus on the search entry field  #
                                                                                                                                   #    
     # Text window                                                                                                                 #
     text_area = tk.Text(viewer_window, wrap="none", font=("Consolas", 10))                                                        #
@@ -278,7 +291,7 @@ def display_viewer(filename, raw_data, initial_mode='text'):                    
                                                                                                                                   #
    # Search button                                                                                                                #
     search_button = tk.Button(control_frame, text="Search", command=on_search_button_clicked)                                     #
-    search_button.pack(side=tk.LEFT, padx=(5, 5))  # Adjust padx as needed for spacing                                            #
+    search_button.pack(side=tk.LEFT, padx=(5, 5))                               # Adjust padx as needed for spacing               #
                                                                                                                                   #
     # Search entry field                                                                                                          #
     action_entry = tk.Entry(control_frame, width=60)                                                                              #
@@ -351,9 +364,9 @@ def view_selected_file():                                                       
                                                                                                                                   #
             # Determine if the file needs to be decompressed and update dest_path accordingly                                     #
             if len(filename.split(".")) > 1 and filename.split(".")[1][1].lower() in ['q', 'z']:        # File extension has a Q? #
-#                unsqueezed_filename = file_uncompress(dest_path)                                    # Adjusted to pass full path #
-                dest_path = file_uncompress(dest_path, temp_dir)                              # Pass temp_dir to file_uncompress  #
-            raw_data = open(dest_path, 'rb').read()                                    # Attempt to automatically detect encoding #
+#                unsqueezed_filename = file_uncompress(dest_path)               # Adjusted to pass full path                      #
+                dest_path = file_uncompress(dest_path, temp_dir)                # Pass temp_dir to file_uncompress                #
+            raw_data = open(dest_path, 'rb').read()                             # Attempt to automatically detect encoding        #
             result = chardet.detect(raw_data)                                                                                     #
             encoding = result['encoding']                                                                                         #
                                                                                                                                   #
@@ -363,15 +376,14 @@ def view_selected_file():                                                       
 #                    display_file_viewer(filename, file_contents)                                                                 #
                     display_viewer(filename, raw_data, "text")                                                                    #
             else:                                                                                                                 #
-#                display_binary_viewer(filename, raw_data)            # If encoding could not be detected, default to binary view #
+#                display_binary_viewer(filename, raw_data)                      # If encoding not detected, default to binary     #
                 display_viewer(filename, raw_data, "binary")                                                                      #
 #                display_hex_viewer(filename, raw_data)                                                                           #
         except Exception as e:                                                                                                    #
             messagebox.showerror("Error", f"Failed to view '{filename}': {e}")                                                    #
         finally:                                                                                                                  #
-            # Cleanup: remove the copied/decompressed file and the temporary directory                                            #
-            os.remove(dest_path)                                                                                                  #
-            shutil.rmtree(temp_dir)                                                                                               #
+            os.remove(dest_path)                                                # Cleanup: remove the copied/decompressed file    #
+            shutil.rmtree(temp_dir)                                             # and the temporary directory                     #                                                  #
                                                                                                                                   #
 def display_hex_viewer(filename, binary_data):                                                                                    #
     viewer_window = tk.Toplevel(root)                                                                                             #
@@ -383,21 +395,21 @@ def display_hex_viewer(filename, binary_data):                                  
     ascii_data = []                                                                                                               #
     for i, byte in enumerate(binary_data):                                                                                        #
         if i % 16 == 0:                                                                                                           #
-            hex_data.append(f"{i:08x}")                                                              # Start new line with offset #
+            hex_data.append(f"{i:08x}")                                         # Start new line with offset                      #
         hex_data.append(f"{byte:02x}")                                                                                            #
         ascii_char = chr(byte) if 32 <= byte <= 126 else '.'                                                                      #
         ascii_data.append(ascii_char)                                                                                             #
                                                                                                                                   #
         if (i + 1) % 16 == 0 or i == len(binary_data) - 1:                                                                        #
             # End of line or end of file, add ASCII representation and reset for the next line                                    #
-            hex_line = " ".join(hex_data[1:])                                                           # Skip offset for joining #
+            hex_line = " ".join(hex_data[1:])                                   # Skip offset for joining                         #
             ascii_line = "".join(ascii_data)                                                                                      #
             full_line = f"{hex_data[0]}  {hex_line:<48}  {ascii_line}\n"                                                          #
             text_area.insert("end", full_line)                                                                                    #
             hex_data.clear()                                                                                                      #
             ascii_data.clear()                                                                                                    #
                                                                                                                                   #
-    text_area.config(state="disabled")                                                                 # Make text area read-only #
+    text_area.config(state="disabled")                                          # Make text area read-only                        #
                                                                                                                                   #
     scrollbar = tk.Scrollbar(viewer_window, command=text_area.yview)                                                              #
     scrollbar.pack(side="right", fill="y")                                                                                        #
@@ -410,13 +422,13 @@ def display_binary_viewer(filename, data):                                      
     text_area = tk.Text(viewer_window, wrap="none", font=("Consolas", 10))                                                        #
     text_area.pack(expand=True, fill="both")                                                                                      #
                                                                                                                                   #
-    hex_data = []                                                            # Convert data to hexadecimal and ASCII side by side #
+    hex_data = []                                                               # Convert data to hex and ASCII side by side      #
     ascii_data = []                                                                                                               #
     for byte in data:                                                                                                             #
         hex_data.append(f"{byte:02X}")                                                                                            #
         ascii_data.append(chr(byte) if 32 <= byte <= 126 else '.')                                                                #
                                                                                                                                   #
-    lines = []                                                                                # Group data into lines of 16 bytes #
+    lines = []                                                                  # Group data into lines of 16 bytes               #
     for i in range(0, len(hex_data), 16):                                                                                         #
         hex_part = " ".join(hex_data[i:i+16])                                                                                     #
         ascii_part = "".join(ascii_data[i:i+16])                                                                                  #
@@ -426,7 +438,7 @@ def display_binary_viewer(filename, data):                                      
     text_area.insert("1.0", "\n".join(lines))                                                                                     #
     text_area.config(state="disabled")                                                                                            #
                                                                                                                                   #
-    scrollbar = tk.Scrollbar(viewer_window, command=text_area.yview)                                              # Add scrollbar #
+    scrollbar = tk.Scrollbar(viewer_window, command=text_area.yview)            # Add scrollbar                                   #
     scrollbar.pack(side="right", fill="y")                                                                                        #
     text_area.config(yscrollcommand=scrollbar.set)                                                                                #
                                                                                                                                   #
@@ -436,13 +448,13 @@ def display_file_viewer(filename, contents):                                    
     text_area = tk.Text(viewer_window, wrap="none")                                                                               #
     text_area.pack(expand=True, fill="both")                                                                                      #
     text_area.insert("1.0", contents)                                                                                             #
-    text_area.config(state="disabled")                                                                 # Make text area read-only #
+    text_area.config(state="disabled")                                          # Make text area read-only                        #
                                                                                                                                   #
-def update_listbox_font():                                                           # Prompt the user for font, size, and weight #
+def update_listbox_font():                                                      # Prompt the user for font, size, and weight      #
     font_spec = simpledialog.askstring("Font", "Enter font (e.g., 'Arial 12 bold'):")                                             #
                                                                                                                                   #
-    if font_spec:                                                                            # Check if the user provided a value #
-        try:                                                                # Create a font object with the user's specifications #
+    if font_spec:                                                               # Check if the user provided a value              #
+        try:                                                                    # Create a font obj with the user's specifications#
             new_font = tkFont.Font(font=font_spec)                                                                                #
             listbox.config(font=new_font)                                                                                         #
         except tk.TclError:                                                                                                       #
@@ -454,7 +466,7 @@ def update_listbox_font():                                                      
 #------------------------                                                                                                         #
 def update_recent_files_menu():                                                                                                   #
     global recent_files_menu, recent_files                                                                                        #
-    recent_files_menu.delete(0, tk.END)                                                                  # Clear existing entries #
+    recent_files_menu.delete(0, tk.END)                                         # Clear existing entries                          #
                                                                                                                                   #
     if recent_files:  # Check if there are recent files                                                                           #
         for index, (file, format) in enumerate(recent_files):                                                                     #
@@ -470,7 +482,7 @@ def open_recent_file(filepath, format):                                         
     global current_filename, imgformat                                                                                            #
     current_filename = filepath                                                                                                   #
     imgformat = format                                                                                                            #
-    open_image(filepath, format, showDialog=False)                           # Reuse the open_image function, or adjust as needed #
+    open_image(filepath, format, showDialog=False)                              # Reuse open_image function, or adjust as needed  #
                                                                                                                                   #
 def open_image(filepath=None, format=None, showDialog=True):                                                                      #
     global current_filename, recent_files, last_used_directory, imgformat, temp_dir                                               #
@@ -509,14 +521,14 @@ def open_image(filepath=None, format=None, showDialog=True):                    
                                                                                                                                   #
 def open_file_or_dialog():                                                                                                        #
     global current_filename                                                                                                       #
-    if current_filename and not tree.get_children():                          # If filename provided on command line and treeview #
-        populate_listbox(current_filename)                                   # empty (i.e., no file currently open) open filename #
+    if current_filename and not tree.get_children():                            #If filename provided on command line and treeview#
+        populate_listbox(current_filename)                                      #empty (i.e. no file currently open) open filename#
         update_window_title()                                                                                                     #
                                                                                                                                   #
 def close_image():                                                                                                                #
     global current_filename, temp_dir                                                                                             #
     current_filename = ""                                                                                                         #
-    tree.delete(*tree.get_children())                                                          # Assuming you're using a treeview #
+    tree.delete(*tree.get_children())                                           # Assuming you're using a treeview                #
                                                                                                                                   #
     update_window_title()                                                                                                         #
     # Cleanup the temporary directory                                                                                             #
@@ -694,6 +706,64 @@ def on_select(event):
         if index in unselectable_indices:
             widget.selection_clear(index)
 
+def translate_filename(filename):                                               # translate a filename between CP/M and host OS formats
+
+    orig_name = filename                                                        # preserve original name
+    
+    character_mappings = [                                                      # CP/M-to-host char mappings
+        ('/', '_'),
+        ('&', '%'),
+        ('$', '='),
+    ]
+    for original_char, translated_char in character_mappings:                   # translate CP/M-to-host
+        filename = filename.replace(original_char, translated_char)
+        
+    if filename != orig_name:                                                   # if something changed, we're done
+        return filename
+    
+    character_mappings = [                                                      # else repeat with host-to-CP/M char mappings
+        ('_', '/'),
+        ('%', '&'),
+        ('=', '$')
+    ]
+    for original_char, translated_char in character_mappings:
+        filename = filename.replace(original_char, translated_char)
+        
+    return filename
+
+def import_files():
+    debug_print("IMPORTING FILE")
+    global current_filename
+    if not current_filename:
+        messagebox.showinfo("No Image Open", "Please open an image file before importing.")
+        return
+    
+    # Prompt for the file to import
+    filename_to_import = filedialog.askopenfilename(title="Select file to import")
+    if not filename_to_import:
+        return  # User cancelled the dialog
+
+    basename = os.path.basename(filename_to_import)
+    corrected_filename = validate_and_correct_filename(basename.replace(" ", "_"))  # Initial correction for spaces
+    if corrected_filename is None:
+        return  # User cancelled or failed to provide a valid filename
+    translated_filename=translate_filename(corrected_filename) # translate filename to CP/M format
+    
+    usernum = prompt_user_number()
+    if usernum is None:
+        return  # User cancelled the usernum dialog
+
+    # Execute the cpmcp command
+    try:
+        cmd = ['cpmcp', '-f', imgformat, current_filename, filename_to_import, f'{usernum}:{translated_filename}']
+        debug_print("Executing command:", ' '.join(cmd))                        # Print the command for troubleshooting
+        result = subprocess.run(cmd, check=True, text=True, capture_output=True)
+        if "device full" in result.stderr.lower():
+            messagebox.showerror("Insufficient room", "The CP/M device is full.")
+    except subprocess.CalledProcessError as e:
+        messagebox.showerror("Import Error", f"Failed to import '{filename_to_import}': {e}")
+    refresh_listbox()
+    
 def extract_items():
     global current_filename
     if not current_filename:
@@ -717,12 +787,15 @@ def extract_items():
         filename = filename.replace(" ", "")                                    # Remove internal spaces from filename
 
         src_path = f"{usernum}:{filename}"  # Construct the source path
-        dest_path = os.path.join(destination_directory, filename)
+        translated_filename=translate_filename(filename) # translate filename to host format
+        dest_path = os.path.join(destination_directory, translated_filename)    # copy to here
 
         # Execute the cpmcp command
         try:
             cmd = ['cpmcp', '-f', imgformat, current_filename, src_path, dest_path]
+            debug_print("dest_path: ", dest_path)
             debug_print("Executing command:", ' '.join(cmd))                    # Print the command for troubleshooting
+            debug_print("Original name: ", filename, "Translated name: ", translated_filename)
             subprocess.run(cmd, check=True)
         except subprocess.CalledProcessError as e:
             messagebox.showerror("Extraction Error", f"Failed to extract '{filename}': {e}")
@@ -780,8 +853,8 @@ def prompt_user_number():
 
 def validate_and_correct_filename(initial_filename):
     
-    restricted_chars = '<>,;:=?*[]%|()\\'                                        # Define CP/M restricted characters and 8.3 filename pattern
-    pattern = re.compile("^[^.]{1,8}(.[^.]*)?$")  # Basic 8.3 pattern check
+    restricted_chars = '<>,;:=?*[]%|()\\'                                       # Define CP/M restricted characters and 8.3 filename pattern
+    pattern = re.compile("^[^.]{1,8}(.[^.]*)?$")                                # Basic 8.3 pattern check
     
     filename = initial_filename
     while True:
@@ -793,37 +866,6 @@ def validate_and_correct_filename(initial_filename):
         else:
             return filename
 
-def import_files():
-    global current_filename
-    if not current_filename:
-        messagebox.showinfo("No Image Open", "Please open an image file before importing.")
-        return
-    
-    # Prompt for the file to import
-    filename_to_import = filedialog.askopenfilename(title="Select file to import")
-    if not filename_to_import:
-        return  # User cancelled the dialog
-
-    basename = os.path.basename(filename_to_import)
-    corrected_filename = validate_and_correct_filename(basename.replace(" ", "_"))  # Initial correction for spaces
-    if corrected_filename is None:
-        return  # User cancelled or failed to provide a valid filename
-    
-    usernum = prompt_user_number()
-    if usernum is None:
-        return  # User cancelled the usernum dialog
-
-    # Execute the cpmcp command
-    try:
-        cmd = ['cpmcp', '-f', imgformat, current_filename, filename_to_import, f'{usernum}:{corrected_filename}']
-        debug_print("Executing command:", ' '.join(cmd))                        # Print the command for troubleshooting
-        result = subprocess.run(cmd, check=True, text=True, capture_output=True)
-        if "device full" in result.stderr.lower():
-            messagebox.showerror("Insufficient room", "The CP/M device is full.")
-    except subprocess.CalledProcessError as e:
-        messagebox.showerror("Import Error", f"Failed to import '{corrected_filename}': {e}")
-    refresh_listbox()
-    
 def confirm_delete():
     return messagebox.askokcancel("Confirm Delete", "Are you sure you want to delete the selected item(s)?")
 
@@ -852,9 +894,9 @@ def format_changed(new_format):
     
     for i, (filename, format) in enumerate(recent_files): # Find and update the format for the current file in the recent_files list
         if filename == current_filename:
-            recent_files[i] = (filename, imgformat)  # Update the format
+            recent_files[i] = (filename, imgformat)                             # Update the format
             break
-    update_recent_files_menu()  # Refresh the Open Recents menu
+    update_recent_files_menu()                                                  # Refresh the Open Recents menu
 
     update_window_title()
     print("Format changed to", imgformat)
@@ -1015,13 +1057,13 @@ settings_menu.add_command(label="Selection Text Color...", command=choose_select
 settings_menu.add_command(label="Customize Border...", command=customize_border)                                                  #
 settings_menu.add_command(label="Customize Padding...", command=customize_padding)                                                #
 settings_menu.add_separator()                                                                                                     #
-settings_menu.add_checkbutton(label="Debug Mode", command=toggle_debug_mode)           # Keep the toggle for debug mode if needed #
+settings_menu.add_checkbutton(label="Debug Mode", command=toggle_debug_mode)    # Keep the toggle for debug mode if needed        #
 menubar.add_cascade(label="Settings", menu=settings_menu)                                                                         #
                                                                                                                                   #
   # Tree view                                                                                                                     #
                                                                                                                                   #
 frame = ttk.Frame(root)                                                                                                           #
-frame.pack(fill='both', expand=True)                                                       # This frame will contain the Treeview #
+frame.pack(fill='both', expand=True)                                            # This frame will contain the Treeview            #
                                                                                                                                   #
 columns = ('un', 'name', 'size')                                                                                                  #
 tree = ttk.Treeview(frame, columns=columns, show='headings', height=15)                                                           #
@@ -1050,9 +1092,9 @@ tree.bind('<Control-a>', select_all)                                            
   # Footer                                                                                                                        #
                                                                                                                                   #
 footer_frame = ttk.Frame(root)                                                                                                    #
-footer_frame.pack(fill=tk.X, side='bottom', expand=False)                                        # Ensure footer is at the bottom #
+footer_frame.pack(fill=tk.X, side='bottom', expand=False)                       # Ensure footer is at the bottom                  #
 footer_label = ttk.Label(footer_frame, text="Initializing...", anchor="w")                                                        #
-footer_label.pack(fill=tk.X, padx=5, pady=5)                                                # Ensure label fills the footer frame #
+footer_label.pack(fill=tk.X, padx=5, pady=5)                                    # Ensure label fills the footer frame             #
 #----------------------------------------------------------------------------------------------------------------------------------
 
 def cleanup_on_exit():                                                          # registered to atexit.register so it will run 
@@ -1063,6 +1105,6 @@ def cleanup_on_exit():                                                          
 atexit.register(cleanup_on_exit)
 
 open_file_or_dialog()
-load_config()
+load_config()                                                                   # load any saved configuration settings
 update_recent_files_menu()                                                      # Make sure this is called after loading the config
 root.mainloop()
